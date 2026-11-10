@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>My Flights</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- Nothing may be loaded from, or sent to, anywhere except this app's own files. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; img-src 'self' blob: data:; style-src 'self'; font-src 'self' data: blob:; connect-src 'self'; form-action 'none'; base-uri 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="My Flights">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="format-detection" content="telephone=no, date=no, address=no">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<header class="topbar">
+  <h1>My Flights</h1>
+  <button id="btn-add" class="round-btn" aria-label="Add a ticket">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+  </button>
+</header>
+
+<main id="home">
+  <div id="empty" class="empty" hidden>
+    <svg viewBox="0 0 24 24" aria-hidden="true" class="plane-big"><path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z"/></svg>
+    <h2>No tickets yet</h2>
+    <p>Add a screenshot of your booking email or the PDF ticket. The details are read on this phone — nothing is uploaded.</p>
+    <button class="btn primary" id="btn-add-empty">Add a ticket</button>
+  </div>
+  <section id="sec-upcoming" hidden>
+    <h2 class="sec-title">Upcoming <span id="count-upcoming" class="count"></span></h2>
+    <div id="list-upcoming" class="tiles"></div>
+  </section>
+  <section id="sec-past" hidden>
+    <h2 class="sec-title">Past <span id="count-past" class="count"></span></h2>
+    <div id="list-past" class="tiles past"></div>
+  </section>
+  <p class="footnote" id="footnote" hidden>Stored only on this device. No account, no sync, no upload.</p>
+</main>
+
+<!-- "Add" choices -->
+<div id="add-sheet" class="sheet-backdrop" hidden>
+  <div class="sheet" role="dialog" aria-label="Add a ticket">
+    <button class="sheet-item" id="pick-screenshot">
+      <strong>Screenshot or PDF</strong>
+      <span>Pick one or more screenshots or PDF tickets</span>
+    </button>
+    <button class="sheet-item" id="pick-manual">
+      <strong>Type it in</strong>
+      <span>Enter the flight details yourself</span>
+    </button>
+    <button class="sheet-item cancel" id="pick-cancel">Cancel</button>
+  </div>
+</div>
+<input type="file" id="file-input" accept="image/*,application/pdf,.pdf" multiple hidden>
+
+<!-- Reading progress -->
+<div id="busy" class="busy" hidden>
+  <div class="busy-card">
+    <div class="spinner" aria-hidden="true"></div>
+    <div id="busy-text">Reading…</div>
+    <div class="bar"><div id="busy-bar"></div></div>
+    <small>Done on this phone. Nothing is uploaded.</small>
+  </div>
+</div>
+
+<!-- Review / edit form -->
+<div id="view-form" class="view" hidden>
+  <header class="viewbar">
+    <button class="link" id="form-cancel">Cancel</button>
+    <h2 id="form-title">Check details</h2>
+    <button class="link strong" id="form-save">Save</button>
+  </header>
+  <div class="view-body">
+    <div id="form-note" class="note" hidden></div>
+    <button id="form-shot" class="shot-thumb" hidden aria-label="Show the screenshot">
+      <img id="form-shot-img" alt="">
+      <span>Tap to compare with the original</span>
+    </button>
+
+    <h3 class="group-title">Booking</h3>
+    <div class="group">
+      <label class="row"><span>Booking reference</span>
+        <input id="f-pnr" type="text" autocapitalize="characters" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="e.g. 7XK4PQ" maxlength="12"></label>
+    </div>
+
+    <h3 class="group-title">Travellers</h3>
+    <div class="group" id="f-pax"></div>
+    <button class="btn ghost" id="f-add-pax">+ Add traveller</button>
+
+    <div id="f-flights"></div>
+    <button class="btn ghost" id="f-add-flight">+ Add another flight</button>
+    <div id="form-error" class="error" hidden></div>
+    <button class="btn primary wide" id="form-save2">Save</button>
+  </div>
+</div>
+
+<!-- Ticket details -->
+<div id="view-detail" class="view" hidden>
+  <header class="viewbar">
+    <button class="link" id="detail-back">‹ Back</button>
+    <h2>Ticket</h2>
+    <button class="link strong" id="detail-edit">Edit</button>
+  </header>
+  <div class="view-body" id="detail-body"></div>
+</div>
+
+<!-- Full-size screenshot -->
+<div id="viewer" class="viewer" hidden>
+  <div id="viewer-scroll" class="viewer-scroll"><img id="viewer-img" alt="Original screenshot"></div>
+  <button id="viewer-close" class="viewer-close" aria-label="Close">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+  </button>
+  <div class="viewer-hint">Tap the picture to zoom</div>
+</div>
+
+<div id="toast" class="toast" hidden><span id="toast-text"></span><button id="toast-undo" hidden>Undo</button></div>
+
+<script src="vendor/tesseract/tesseract.min.js"></script>
+<script src="js/data.js"></script>
+<script src="js/parser.js"></script>
+<script src="js/db.js"></script>
+<script src="js/ocr.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
