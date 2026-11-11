@@ -4,8 +4,9 @@
 <meta charset="utf-8">
 <title>My Flights</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<!-- Nothing may be loaded from, or sent to, anywhere except this app's own files. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; img-src 'self' blob: data:; style-src 'self'; font-src 'self' data: blob:; connect-src 'self'; form-action 'none'; base-uri 'none'">
+<!-- The page may only talk to its own files, plus two flight-data services that are used
+     solely when the user switches them on (they receive a flight number and date, nothing else). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; img-src 'self' blob: data:; style-src 'self'; font-src 'self' data: blob:; connect-src 'self' https://aerodatabox.p.rapidapi.com https://api.adsbdb.com; form-action 'none'; base-uri 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
@@ -23,11 +24,31 @@
 <body>
 
 <header class="topbar">
-  <h1>My Flights</h1>
-  <button id="btn-add" class="round-btn" aria-label="Add a ticket">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-  </button>
+  <div class="topbar-row">
+    <h1>My Flights</h1>
+    <div class="topbar-actions">
+      <button id="btn-refresh" class="icon-btn" aria-label="Refresh flight status" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.6-5.9M20 4v5h-5"/></svg>
+      </button>
+      <button id="btn-settings" class="icon-btn" aria-label="Settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>
+      </button>
+      <button id="btn-add" class="round-btn" aria-label="Add a ticket">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+    </div>
+  </div>
+  <div class="tabs" role="tablist" id="tabs" hidden>
+    <button role="tab" data-tab="past" aria-selected="false">Past <span></span></button>
+    <button role="tab" data-tab="now" aria-selected="false">Now <span></span></button>
+    <button role="tab" data-tab="upcoming" aria-selected="false">Upcoming <span></span></button>
+  </div>
 </header>
+
+<div id="update-bar" class="update-bar" hidden>
+  <span>A new version is ready. Your tickets stay as they are.</span>
+  <button id="update-now">Update</button>
+</div>
 
 <main id="home">
   <div id="empty" class="empty" hidden>
@@ -36,15 +57,9 @@
     <p>Add a screenshot of your booking email or the PDF ticket. The details are read on this phone — nothing is uploaded.</p>
     <button class="btn primary" id="btn-add-empty">Add a ticket</button>
   </div>
-  <section id="sec-upcoming" hidden>
-    <h2 class="sec-title">Upcoming <span id="count-upcoming" class="count"></span></h2>
-    <div id="list-upcoming" class="tiles"></div>
-  </section>
-  <section id="sec-past" hidden>
-    <h2 class="sec-title">Past <span id="count-past" class="count"></span></h2>
-    <div id="list-past" class="tiles past"></div>
-  </section>
-  <p class="footnote" id="footnote" hidden>Stored only on this device. No account, no sync, no upload.</p>
+  <div id="list" class="tiles"></div>
+  <p id="tab-empty" class="tab-empty" hidden></p>
+  <p class="footnote" id="footnote" hidden></p>
 </main>
 
 <!-- "Add" choices -->
@@ -62,6 +77,7 @@
   </div>
 </div>
 <input type="file" id="file-input" accept="image/*,application/pdf,.pdf" multiple hidden>
+<input type="file" id="import-input" accept="application/json,.json" hidden>
 
 <!-- Reading progress -->
 <div id="busy" class="busy" hidden>
@@ -82,7 +98,7 @@
   </header>
   <div class="view-body">
     <div id="form-note" class="note" hidden></div>
-    <button id="form-shot" class="shot-thumb" hidden aria-label="Show the screenshot">
+    <button id="form-shot" class="shot-thumb" hidden aria-label="Show the original">
       <img id="form-shot-img" alt="">
       <span>Tap to compare with the original</span>
     </button>
@@ -101,6 +117,7 @@
     <button class="btn ghost" id="f-add-flight">+ Add another flight</button>
     <div id="form-error" class="error" hidden></div>
     <button class="btn primary wide" id="form-save2">Save</button>
+    <button class="btn ghost wide small" id="form-copy-raw" hidden>Read wrongly? Copy what the app read</button>
   </div>
 </div>
 
@@ -114,9 +131,46 @@
   <div class="view-body" id="detail-body"></div>
 </div>
 
-<!-- Full-size screenshot -->
+<!-- Settings -->
+<div id="view-settings" class="view" hidden>
+  <header class="viewbar">
+    <span></span>
+    <h2>Settings</h2>
+    <button class="link strong" id="settings-done">Done</button>
+  </header>
+  <div class="view-body">
+    <h3 class="group-title">Live flight status</h3>
+    <div class="group">
+      <label class="row"><span>Your key</span>
+        <input id="s-key" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Paste your free key"></label>
+      <label class="row switch"><span>Check hourly while the app is open</span><input id="s-auto" type="checkbox"></label>
+    </div>
+    <p class="help">Delays, new times and gates come from the AeroDataBox service. It needs a free personal key:
+      sign up at rapidapi.com, subscribe to "AeroDataBox" on its free plan, and paste the key shown as "X-RapidAPI-Key" here.
+      When status is checked, the app sends <strong>only the flight number and date</strong> — never names, booking references or pictures.
+      The key is kept on this phone. An iPhone web app cannot check while it is closed.</p>
+    <p id="s-key-state" class="help strong"></p>
+
+    <h3 class="group-title">Reading tickets</h3>
+    <div class="group">
+      <label class="row switch"><span>Check the route online after reading</span><input id="s-route" type="checkbox"></label>
+    </div>
+    <p class="help">Looks up which airports a flight number normally connects (service: adsbdb.com, no key) and warns when a ticket was read differently. Sends only the flight number.</p>
+
+    <h3 class="group-title">Backup</h3>
+    <div class="group">
+      <button class="row action" id="s-export">Save a backup file</button>
+      <button class="row action" id="s-import">Restore from a backup file</button>
+    </div>
+    <p class="help">The backup holds all tickets and pictures in one file that you keep yourself (Files, AirDrop, a USB stick). Use it before changing phones.</p>
+
+    <p class="help center" id="s-about"></p>
+  </div>
+</div>
+
+<!-- Full-size original -->
 <div id="viewer" class="viewer" hidden>
-  <div id="viewer-scroll" class="viewer-scroll"><img id="viewer-img" alt="Original screenshot"></div>
+  <div id="viewer-scroll" class="viewer-scroll"><img id="viewer-img" alt="Original ticket"></div>
   <button id="viewer-close" class="viewer-close" aria-label="Close">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
   </button>
@@ -128,6 +182,8 @@
 <script src="vendor/tesseract/tesseract.min.js"></script>
 <script src="js/data.js"></script>
 <script src="js/parser.js"></script>
+<script src="js/time.js"></script>
+<script src="js/status.js"></script>
 <script src="js/db.js"></script>
 <script src="js/ocr.js"></script>
 <script src="js/app.js"></script>

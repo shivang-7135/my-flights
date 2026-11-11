@@ -1,12 +1,12 @@
 /* Offline support: on first load every file of the app is copied into the phone's cache,
    after which the app starts and works with no connection at all.
-   Tickets are NOT in here — they live in IndexedDB and never touch the network.
+   Tickets are NOT in here — they live in IndexedDB, which app updates never touch.
    Change VERSION whenever any app file changes, so phones pick up the new files. */
-var VERSION = 'my-flights-v2';
+var VERSION = 'my-flights-v3';
 var FILES = [
   './', 'index.html', 'manifest.json',
   'css/app.css',
-  'js/data.js', 'js/parser.js', 'js/db.js', 'js/ocr.js', 'js/app.js',
+  'js/data.js', 'js/parser.js', 'js/time.js', 'js/status.js', 'js/db.js', 'js/ocr.js', 'js/app.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png',
   'vendor/tesseract/tesseract.min.js', 'vendor/tesseract/worker.min.js',
   'vendor/tesseract/core/tesseract-core-lstm.wasm.js',
@@ -31,7 +31,9 @@ var FILES = [
 ];
 
 self.addEventListener('install', function (e) {
-  e.waitUntil(caches.open(VERSION).then(function (c) { return c.addAll(FILES); }).then(function () { return self.skipWaiting(); }));
+  // A new version waits until the user taps "Update" in the app (or all windows are closed),
+  // so the app never changes under someone's fingers. The very first install has nothing to wait for.
+  e.waitUntil(caches.open(VERSION).then(function (c) { return c.addAll(FILES); }));
 });
 
 self.addEventListener('activate', function (e) {
@@ -39,6 +41,8 @@ self.addEventListener('activate', function (e) {
     return Promise.all(keys.filter(function (k) { return k !== VERSION; }).map(function (k) { return caches.delete(k); }));
   }).then(function () { return self.clients.claim(); }));
 });
+
+self.addEventListener('message', function (e) { if (e.data === 'update-now') self.skipWaiting(); });
 
 self.addEventListener('fetch', function (e) {
   var req = e.request;

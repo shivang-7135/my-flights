@@ -2,6 +2,17 @@
 
 Branch: `v2`. The live app (`main`) stays as it is until v2 is ready.
 
+## Where v2 stands
+
+Built on this branch and checked in the browser (not yet on a phone, not yet live):
+
+- Phase 0: ticket format upgrade steps, backup file (save / restore), "new version ready" banner.
+- Phase 2: Past · Now · Upcoming tabs, country flags, airport-local times with time zone, "+1" next-day arrivals, flight time, countdown.
+- Phase 3: live status with the user's own AeroDataBox key (Settings), one-tap refresh, hourly check while open, old time crossed out next to the new one, terminal / gate / belt. **Only tested against a simulated reply — needs a real key to confirm.**
+- Phase 1 (part): fields that look doubtful are marked orange, optional route check (adsbdb), "Copy what the app read" button for reporting wrong readings.
+
+Still open: the journey-by-journey rebuild of the reader (needs real failing tickets), barcode reading, the OCR comparison, the small-model experiment, Phase 4.
+
 ## The promise
 
 - Free for everyone, open source, no income model.

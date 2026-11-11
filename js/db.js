@@ -39,11 +39,35 @@
     return (root.crypto && crypto.randomUUID) ? crypto.randomUUID() : 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2);
   }
 
+  function toBase64(buf) {
+    var bytes = new Uint8Array(buf), out = '', CH = 0x8000;
+    for (var i = 0; i < bytes.length; i += CH) out += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+    return btoa(out);
+  }
+  function fromBase64(b64) {
+    var bin = atob(b64), bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes.buffer;
+  }
+
+  /* Tickets saved by an older version of the app are brought up to the current shape when read.
+     Add a step here whenever the shape of a ticket changes — never rename or delete the database. */
+  var SCHEMA = 2;
+  function upgrade(t) {
+    if (!t.schema) {                    // v1 -> v2: live status and schema marker
+      t.passengers = Array.isArray(t.passengers) ? t.passengers : [];
+      t.live = t.live || null;
+      t.schema = 2;
+    }
+    return t;
+  }
+
   var api = {
+    SCHEMA: SCHEMA,
     newId: newId,
     allTickets: function () {
       return run(['tickets'], 'readonly', function (tx) { return reqValue(tx.objectStore('tickets').getAll()); })
-        .then(function (b) { return b.value || []; });
+        .then(function (b) { return (b.value || []).map(upgrade); });
     },
     // Save several flights and (optionally) their shared screenshot in one go.
     saveTickets: function (tickets, image) {
@@ -68,6 +92,27 @@
           };
         };
       });
+    },
+    /* Backup: everything in one plain object (pictures as base64 text) and back again.
+       Importing adds or replaces by id, so importing the same file twice is harmless. */
+    exportAll: function () {
+      return run(['tickets', 'images'], 'readonly', function (tx) {
+        return { t: reqValue(tx.objectStore('tickets').getAll()), i: reqValue(tx.objectStore('images').getAll()) };
+      }).then(function (b) {
+        return {
+          app: 'my-flights', format: 1, exportedAt: new Date().toISOString(),
+          tickets: b.t.value || [],
+          images: (b.i.value || []).map(function (im) { return { id: im.id, type: im.type, base64: toBase64(im.data) }; })
+        };
+      });
+    },
+    importAll: function (data) {
+      if (!data || data.app !== 'my-flights' || !Array.isArray(data.tickets)) return Promise.reject(new Error('This is not a My Flights backup file.'));
+      var images = (data.images || []).map(function (im) { return { id: im.id, type: im.type, data: fromBase64(im.base64) }; });
+      return run(['tickets', 'images'], 'readwrite', function (tx) {
+        images.forEach(function (im) { tx.objectStore('images').put(im); });
+        data.tickets.forEach(function (t) { if (t && t.id) tx.objectStore('tickets').put(t); });
+      }).then(function () { return data.tickets.length; });
     },
     getImage: function (id) {
       if (!id) return Promise.resolve(null);

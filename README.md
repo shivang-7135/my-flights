@@ -6,8 +6,11 @@ and shows each flight as a tile (route, date, times, airline, flight number, boo
 
 - No account, no mailbox access, no sync, no analytics.
 - Tickets and screenshots are stored only in the phone's own storage (IndexedDB).
-- After the first load the app makes no network requests at all, and it works offline.
-  A security rule in `index.html` (Content-Security-Policy) forbids the page from contacting any other server.
+- By default the app makes no network requests after the first load, and it works offline.
+- Two optional online checks exist, both off until you switch them on in Settings. They send **only a flight number and date**:
+  live status (AeroDataBox, with your own free key) and a route check (adsbdb.com).
+  A security rule in `index.html` (Content-Security-Policy) forbids the page from contacting anything else.
+- Updates never touch saved tickets; Settings also offers a backup file.
 
 ## Try it on the Mac
 
