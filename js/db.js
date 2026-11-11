@@ -3,7 +3,8 @@
      images  — the original screenshots ({ id, type, data:ArrayBuffer }); one screenshot can belong to several flights */
 (function (root) {
   'use strict';
-  var NAME = 'my-flights', VERSION = 1, dbp = null;
+  // The beta address keeps its own tickets, so trying a beta can never touch the tickets of the main app.
+  var NAME = /beta/i.test(location.pathname) ? 'my-flights-beta' : 'my-flights', VERSION = 1, dbp = null;
 
   function open() {
     if (!dbp) {

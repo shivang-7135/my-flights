@@ -2,7 +2,11 @@
    after which the app starts and works with no connection at all.
    Tickets are NOT in here — they live in IndexedDB, which app updates never touch.
    Change VERSION whenever any app file changes, so phones pick up the new files. */
-var VERSION = 'my-flights-v3';
+var VERSION = 'v4';
+// Several copies of the app (main, beta) can live on one web host; each keeps its own offline files.
+var PREFIX = 'my-flights::' + self.registration.scope + '::';
+var CACHE = PREFIX + VERSION;
+var IS_BETA = /beta/i.test(self.registration.scope);
 var FILES = [
   './', 'index.html', 'manifest.json',
   'css/app.css',
@@ -33,12 +37,16 @@ var FILES = [
 self.addEventListener('install', function (e) {
   // A new version waits until the user taps "Update" in the app (or all windows are closed),
   // so the app never changes under someone's fingers. The very first install has nothing to wait for.
-  e.waitUntil(caches.open(VERSION).then(function (c) { return c.addAll(FILES); }));
+  e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(FILES); }));
 });
 
 self.addEventListener('activate', function (e) {
   e.waitUntil(caches.keys().then(function (keys) {
-    return Promise.all(keys.filter(function (k) { return k !== VERSION; }).map(function (k) { return caches.delete(k); }));
+    return Promise.all(keys.filter(function (k) {
+      var mine = k.indexOf(PREFIX) === 0 && k !== CACHE;
+      var legacy = !IS_BETA && /^my-flights-v\d+$/.test(k);     // names used before the beta existed
+      return mine || legacy;
+    }).map(function (k) { return caches.delete(k); }));
   }).then(function () { return self.clients.claim(); }));
 });
 
@@ -48,9 +56,9 @@ self.addEventListener('fetch', function (e) {
   var req = e.request;
   if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
   e.respondWith(
-    caches.match(req, { ignoreSearch: true }).then(function (hit) {
+    caches.open(CACHE).then(function (c) { return c.match(req, { ignoreSearch: true }); }).then(function (hit) {
       if (hit) return hit;
-      if (req.mode === 'navigate') return caches.match('index.html').then(function (page) { return page || fetch(req); });
+      if (req.mode === 'navigate') return caches.open(CACHE).then(function (c) { return c.match('index.html'); }).then(function (page) { return page || fetch(req); });
       return fetch(req);
     })
   );
