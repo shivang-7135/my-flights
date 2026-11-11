@@ -26,7 +26,8 @@
   }
   function side(mv) {
     mv = mv || {};
-    var now = splitLocal(mv.runwayTime) || splitLocal(mv.revisedTime) || splitLocal(mv.predictedTime);
+    // Gate times first (what the airport board shows); the runway time includes taxiing and would overstate a delay.
+    var now = splitLocal(mv.revisedTime) || splitLocal(mv.predictedTime) || splitLocal(mv.runwayTime);
     return {
       code: (mv.airport && mv.airport.iata) || '',
       sched: splitLocal(mv.scheduledTime), now: now, actual: !!splitLocal(mv.runwayTime),
