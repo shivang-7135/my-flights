@@ -1,7 +1,7 @@
 /* My Flights — screen logic. Tickets, names and pictures stay on this device. */
 (function () {
   'use strict';
-  var APP_VERSION = '2.0 beta 4';
+  var APP_VERSION = '2.0';
   var $ = function (id) { return document.getElementById(id); };
   var D = FlightData, T = FlightTime, S = FlightStatus;
 
