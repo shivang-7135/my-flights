@@ -103,7 +103,7 @@
   var SLASH_NAME_RE = /(?<![A-Za-z])([A-ZÄÖÜ]{2,}(?:[ -][A-ZÄÖÜ]{2,})?)\s?\/\s?([A-ZÄÖÜ]{2,}(?:\s[A-ZÄÖÜ]{2,})*?)(?:\s+(MR|MRS|MS|MISS|MSTR|DR))?(?![A-Za-z])/g;
   var PAX_KEY = /^\W*(?:\d+\s*)?(passenger names?|passengers?|passagiere?|reisende[rn]?|flugg(?:ä|a)ste?|fluggast|travell?ers?|guests?|namen? de[rs] (?:reisenden|passagiere?)|names?)\b\s*(?:\(\s*\d+\s*\)|\d+)?\s*[:\-–]?\s*(.*)$/i;
   var GREETING = /^\W*(dear|hello|hi|hey|sehr geehrte[rs]?|hallo|guten tag|liebe[rs]?|namaste)\b/i;
-  var NAME_STOP = /^(flight|flug|booking|buchung|seat|sitz|sitzplatz|baggage|bag|bags|gep(ä|a)ck|adult|adults|child|infant|erwachsene[r]?|kind|fare|tarif|economy|business|class|klasse|total|price|preis|date|datum|from|to|von|nach|departure|arrival|abflug|ankunft|terminal|status|confirmed|best(ä|a)tigt|check|online|manage|your|ihre?|trip|reise|details|ticket|number|nummer|reference|code|priority|cabin|light|basic|flex|plus|classic|saver|regular|standard|added|included|inklusive|free|kg|pnr|name|type|typ|and|und|the|der|die|das|for|with|mit|view|travel|document|e-ticket|eticket|contact|kontakt|phone|email|payment|zahlung|meal|saver|airport|flughafen|thank|thanks|danke|operated|durchgef(ü|u)hrt|non-stop|nonstop|direct|direkt|sector|route|strecke)$/i;
+  var NAME_STOP = /^(flight|flug|booking|buchung|seat|sitz|sitzplatz|baggage|bag|bags|gep(ä|a)ck|adult|adults|child|infant|erwachsene[r]?|kind|fare|tarif|economy|business|class|klasse|total|price|preis|date|datum|from|to|von|nach|departure|arrival|abflug|ankunft|terminal|status|confirmed|best(ä|a)tigt|check|online|manage|your|ihre?|trip|reise|details|ticket|number|nummer|reference|code|priority|cabin|light|basic|flex|plus|classic|saver|regular|standard|added|included|inklusive|free|kg|pnr|name|type|typ|and|und|the|der|die|das|for|with|mit|view|travel|document|e-ticket|eticket|contact|kontakt|phone|email|payment|zahlung|meal|saver|airport|flughafen|thank|thanks|danke|valid|student|only|endorsements?|check-in|operated|durchgef(ü|u)hrt|non-stop|nonstop|direct|direkt|sector|route|strecke)$/i;
   var PAX_SKIP_LINE = /(seat|sitz|bag|gep(ä|a)ck|adult|erwachsen|child|kind|infant|\bkg\b|priority|\d|^\W*$)/i;
 
   function titleCase(s) {
@@ -149,6 +149,7 @@
       SLASH_NAME_RE.lastIndex = 0;
       while ((m = SLASH_NAME_RE.exec(lines[i]))) {
         if (D.AIRPORTS[m[1]] && D.AIRPORTS[m[2]]) continue;            // FRA/DEL is a route, not a person
+        if ((m[1] + ' ' + m[2]).split(/[ -]/).some(function (x) { return NAME_STOP.test(x) || D.AIRLINES[x] || D.AIRPORTS[x]; })) continue;
         var first = m[2].replace(/\s+(MR|MRS|MS|MISS|MSTR|DR)$/, '');
         add(cleanName(first + ' ' + m[1]));
       }
@@ -163,7 +164,13 @@
     for (i = 0; i < lines.length; i++) {
       m = PAX_KEY.exec(lines[i]);
       if (!m) continue;
-      var rest = (m[2] || '').trim();
+      var rest = (m[2] || '').split(/\s{3,}/)[0].trim();     // ignore a neighbouring column
+      var gds = /^([A-ZÄÖÜ]{2,}(?:[ -][A-ZÄÖÜ]{2,}){1,3})\s+(MR|MRS|MS|MISS|MSTR|DR)\b/.exec(rest);
+      if (gds) {                         // airline systems print the family name first
+        var w = gds[1].split(' ');
+        add(cleanName(w.slice(1).join(' ') + ' ' + w[0]));
+        continue;
+      }
       if (rest) {
         var parts = rest.split(/\s*(?:,|;|&|\/|\band\b|\bund\b|\|)\s*/i), got = false;
         parts.forEach(function (p) { var n = looksLikeNameLine(p); if (n) { add(n); got = true; } });
@@ -260,10 +267,19 @@
   function byPos(a, b) { return a.line - b.line || a.col - b.col; }
 
   // Pick date, times and airports for one flight from the lines [from, to].
-  function extractWindow(tok, from, to) {
+  function extractWindow(tok, from, to, anchor) {
     function inWin(t) { return t.line >= from && t.line <= to; }
+    /* Keep only the values printed closest to the flight number (its own row and the couple of
+       lines around the nearest value). Text further away — fare calculations, "date of issue",
+       "not valid before" lines, the next flight — must not leak into this flight. */
+    function near(list) {
+      if (anchor == null || !list.length) return list;
+      var d = Infinity;
+      list.forEach(function (t) { d = Math.min(d, Math.abs(t.line - anchor)); });
+      return list.filter(function (t) { return Math.abs(t.line - anchor) <= d + 2; });
+    }
     var seg = { date: '', depTime: '', arrTime: '', from: '', to: '' };
-    var dates = tok.dates.filter(inWin), times = tok.times.filter(inWin), codes = tok.codes.filter(inWin);
+    var dates = near(tok.dates.filter(inWin)), times = near(tok.times.filter(inWin)), codes = near(tok.codes.filter(inWin));
 
     if (dates.length) seg.date = dates[0].value;
 
@@ -318,7 +334,7 @@
     var anchors = tok.flights, last = lines.length - 1, segs = [];
 
     if (anchors.length <= 1) {
-      var only = extractWindow(tok, 0, last);
+      var only = extractWindow(tok, 0, last, anchors.length ? anchors[0].line : null);
       if (anchors.length) { only.code = anchors[0].code; only.num = anchors[0].num; }
       if (anchors.length || segScore(only) >= 2) segs.push(only);
     } else {
@@ -328,7 +344,7 @@
       var tryCut = function (bounds) {
         var out = [], score = 0;
         for (var a = 0; a < anchors.length; a++) {
-          var s = extractWindow(tok, bounds[a][0], bounds[a][1]);
+          var s = extractWindow(tok, bounds[a][0], bounds[a][1], anchors[a].line);
           s.code = anchors[a].code; s.num = anchors[a].num;
           score += segScore(s);
           out.push(s);
@@ -400,17 +416,17 @@
      rows from word positions, which suits table-like itineraries better.
      words: [{ text, x0, y0, x1, y1 }]   tight: true for text taken from a PDF */
   function rowsFromWords(words, tight) {
-    var ws = words.filter(function (w) { return w.text && w.text.trim(); }).slice().sort(function (a, b) { return (a.y0 + a.y1) - (b.y0 + b.y1); });
+    var ws = words.filter(function (w) { return w.text && w.text.trim() && !/^[_\-\u2013\u2014=.|]+$/.test(w.text.trim()); }).slice().sort(function (a, b) { return (a.y0 + a.y1) - (b.y0 + b.y1); });
     var rows = [];
     ws.forEach(function (w) {
       var cy = (w.y0 + w.y1) / 2, h = w.y1 - w.y0, row = null;
       for (var i = rows.length - 1; i >= 0 && i >= rows.length - 4; i--) {
-        if (Math.abs(rows[i].cy - cy) < Math.max(rows[i].h, h) * 0.45) { row = rows[i]; break; }
+        if (Math.abs(rows[i].cy - cy) < (tight ? Math.min(rows[i].h, h) * 0.5 : Math.max(rows[i].h, h) * 0.45)) { row = rows[i]; break; }
       }
       if (!row) { row = { cy: cy, h: h, words: [] }; rows.push(row); }
       row.words.push(w);
       row.cy = (row.cy * (row.words.length - 1) + cy) / row.words.length;
-      row.h = Math.max(row.h, h);
+      row.h = tight ? row.h : Math.max(row.h, h);
     });
     return rows.map(function (r) {
       r.words.sort(function (a, b) { return a.x0 - b.x0; });
@@ -419,7 +435,7 @@
         if (i) {
           var gap = w.x0 - r.words[i - 1].x1;
           // PDF text arrives in fragments that may touch ("Frank" + "furt"): join those without a space.
-          out += (tight && gap < r.h * 0.08) ? '' : gap > r.h * 1.6 ? '   ' : ' ';
+          out += (tight && gap < r.h * 0.08 && gap > -r.h * 0.3) ? '' : gap > r.h * 1.6 ? '   ' : ' ';
         }
         out += w.text;
       });

@@ -13,6 +13,11 @@ const expected = {
     F('IndiGo', '6E 2134', 'DEL', 'BLR', '2026-11-28', '06:25', '09:15'), F('IndiGo', '6E 5013', 'BLR', 'DEL', '2026-12-05', '18:40', '21:35')] },
   eurowings_de_dark: { pnr: 'M3TZ8R', passengers: ['Max Mustermann', 'Erika Mustermann'], flights: [
     F('Eurowings', 'EW 754', 'CGN', 'VIE', '2026-12-17', '06:45', '08:15'), F('Eurowings', 'EW 755', 'VIE', 'CGN', '2026-12-20', '18:50', '20:25')] },
+  // Real-world layout (anonymised): Air India web booking PDF, four flights, city names only,
+  // multi-line table cells, fare calculation full of airport codes below the flights.
+  airindia_web_4legs: { pnr: 'K4TQ7Z', passengers: ['Max Mustermann'], flights: [
+    F('Air India', 'AI 2030', 'FRA', 'DEL', '2026-11-24', '20:45', '10:35'), F('Air India', 'AI 2513', 'DEL', 'BLR', '2026-11-25', '13:00', '15:50'),
+    F('Air India', 'AI 2604', 'BLR', 'BOM', '2026-12-29', '09:00', '10:55'), F('Air India', 'AI 2027', 'BOM', 'FRA', '2026-12-29', '12:30', '18:30')] },
   airindia_eticket: { pnr: 'Q2WXY7', passengers: ['Arjun Sharma', 'Lakshmi Iyer'], flights: [
     F('Air India', 'AI 121', 'DEL', 'FRA', '2027-01-02', '13:15', '18:05')] }
 };

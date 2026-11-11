@@ -141,12 +141,16 @@
   <div class="view-body">
     <h3 class="group-title">Live flight status</h3>
     <div class="group">
+      <a class="row action" id="s-getkey" href="https://rapidapi.com/aedbx-aedbx/api/aerodatabox/pricing" target="_blank" rel="noopener noreferrer">1 · Get a free key (opens rapidapi.com)</a>
+      <button class="row action" id="s-paste">2 · Paste the key from the clipboard</button>
       <label class="row"><span>Your key</span>
-        <input id="s-key" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Paste your free key"></label>
+        <input id="s-key" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="No key yet"></label>
+      <button class="row action" id="s-test">3 · Test the key</button>
       <label class="row switch"><span>Check hourly while the app is open</span><input id="s-auto" type="checkbox"></label>
     </div>
-    <p class="help">Delays, new times and gates come from the AeroDataBox service. It needs a free personal key:
-      sign up at rapidapi.com, subscribe to "AeroDataBox" on its free plan, and paste the key shown as "X-RapidAPI-Key" here.
+    <p class="help">Delays, new times and gates come from the AeroDataBox service, which needs a free personal key.
+      Step 1 opens its page: create an account there, choose the free "Basic" plan, and copy the value shown as "X-RapidAPI-Key".
+      Come back and tap step 2. The key has to be created by you once; the app cannot do that part for you.
       When status is checked, the app sends <strong>only the flight number and date</strong> — never names, booking references or pictures.
       The key is kept on this phone. An iPhone web app cannot check while it is closed.</p>
     <p id="s-key-state" class="help strong"></p>

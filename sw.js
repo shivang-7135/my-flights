@@ -2,7 +2,7 @@
    after which the app starts and works with no connection at all.
    Tickets are NOT in here — they live in IndexedDB, which app updates never touch.
    Change VERSION whenever any app file changes, so phones pick up the new files. */
-var VERSION = 'v4';
+var VERSION = 'v6';
 // Several copies of the app (main, beta) can live on one web host; each keeps its own offline files.
 var PREFIX = 'my-flights::' + self.registration.scope + '::';
 var CACHE = PREFIX + VERSION;
@@ -37,7 +37,11 @@ var FILES = [
 self.addEventListener('install', function (e) {
   // A new version waits until the user taps "Update" in the app (or all windows are closed),
   // so the app never changes under someone's fingers. The very first install has nothing to wait for.
-  e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(FILES); }));
+  // cache: 'reload' makes sure the files come fresh from the server, never from the browser's
+  // ordinary cache — otherwise an update could silently keep an old file.
+  e.waitUntil(caches.open(CACHE).then(function (c) {
+    return c.addAll(FILES.map(function (f) { return new Request(f, { cache: 'reload' }); }));
+  }));
 });
 
 self.addEventListener('activate', function (e) {

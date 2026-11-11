@@ -68,6 +68,15 @@
       });
   }
 
+  // Asks the service one small question to see whether the key is accepted. -> message (resolves) or Error
+  function testKey() {
+    var d = new Date(), iso = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+    return fetchStatus({ flightNumber: 'LH400', date: iso, from: 'FRA' }).then(function () { return 'The key works.'; }, function (e) {
+      if (e.code === 'nodata') return 'The key works.';       // accepted, there was just nothing to report
+      throw e;
+    });
+  }
+
   // -> { from, to, airline } as normally flown, or null if unknown
   function fetchRoute(flightNumber) {
     var num = cleanNumber(flightNumber);
@@ -104,5 +113,5 @@
     return { text: base, tone: 'info', delayMin: delay };
   }
 
-  root.FlightStatus = { getSettings: getSettings, saveSettings: saveSettings, fetchStatus: fetchStatus, fetchRoute: fetchRoute, summary: summary, normalise: normalise };
+  root.FlightStatus = { getSettings: getSettings, saveSettings: saveSettings, fetchStatus: fetchStatus, testKey: testKey, fetchRoute: fetchRoute, summary: summary, normalise: normalise };
 })(typeof self !== 'undefined' ? self : globalThis);

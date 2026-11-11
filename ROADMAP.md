@@ -11,6 +11,8 @@ Built on this branch and checked in the browser (not yet on a phone, not yet liv
 - Phase 3: live status with the user's own AeroDataBox key (Settings), one-tap refresh, hourly check while open, old time crossed out next to the new one, terminal / gate / belt. **Only tested against a simulated reply — needs a real key to confirm.**
 - Phase 1 (part): fields that look doubtful are marked orange, optional route check (adsbdb), "Copy what the app read" button for reporting wrong readings.
 
+- Phase 1 (first real case): an Air India web-booking PDF with four flights was read wrongly (flights 2–4). Fixed by keeping only the values printed closest to each flight number, rebuilding PDF rows correctly, and reading "SURNAME FIRSTNAME MR" names. An anonymised copy is now a permanent test.
+
 Still open: the journey-by-journey rebuild of the reader (needs real failing tickets), barcode reading, the OCR comparison, the small-model experiment, Phase 4.
 
 ## The promise

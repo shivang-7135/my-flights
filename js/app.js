@@ -1,7 +1,7 @@
 /* My Flights — screen logic. Tickets, names and pictures stay on this device. */
 (function () {
   'use strict';
-  var APP_VERSION = '2.0 beta';
+  var APP_VERSION = '2.0 beta 2';
   var $ = function (id) { return document.getElementById(id); };
   var D = FlightData, T = FlightTime, S = FlightStatus;
 
@@ -660,6 +660,21 @@
   $('btn-settings').addEventListener('click', openSettings);
   $('settings-done').addEventListener('click', function () { storeSettings(); $('view-settings').hidden = true; render(); autoCheck(); });
   ['s-key', 's-auto', 's-route'].forEach(function (id) { $(id).addEventListener('change', storeSettings); });
+  $('s-paste').addEventListener('click', function () {
+    if (!navigator.clipboard || !navigator.clipboard.readText) { toast('Tap the field below and paste there'); $('s-key').focus(); return; }
+    navigator.clipboard.readText().then(function (txt) {
+      txt = (txt || '').trim();
+      if (!/^[A-Za-z0-9]{30,80}$/.test(txt)) { toast('The clipboard does not hold a key yet'); return; }
+      $('s-key').value = txt; storeSettings(); toast('Key pasted. Tap step 3 to test it.');
+    }, function () { toast('Tap the field below and paste there'); $('s-key').focus(); });
+  });
+  $('s-test').addEventListener('click', function () {
+    storeSettings();
+    var b = $('s-test'); b.disabled = true;
+    S.testKey().then(function (msg) { $('s-key-state').textContent = msg + ' Live status is on.'; toast(msg); },
+      function (e) { $('s-key-state').textContent = e.message; toast(e.message); })
+      .then(function () { b.disabled = false; });
+  });
   $('s-export').addEventListener('click', exportBackup);
   $('s-import').addEventListener('click', function () { $('import-input').value = ''; $('import-input').click(); });
   $('import-input').addEventListener('change', function () { importBackup(this.files && this.files[0]); });
