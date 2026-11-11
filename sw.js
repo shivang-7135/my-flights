@@ -2,7 +2,7 @@
    after which the app starts and works with no connection at all.
    Tickets are NOT in here — they live in IndexedDB, which app updates never touch.
    Change VERSION whenever any app file changes, so phones pick up the new files. */
-var VERSION = 'v7';
+var VERSION = 'v9';
 // Several copies of the app (main, beta) can live on one web host; each keeps its own offline files.
 var PREFIX = 'my-flights::' + self.registration.scope + '::';
 var CACHE = PREFIX + VERSION;

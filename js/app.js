@@ -1,7 +1,7 @@
 /* My Flights — screen logic. Tickets, names and pictures stay on this device. */
 (function () {
   'use strict';
-  var APP_VERSION = '2.0 beta 2';
+  var APP_VERSION = '2.0 beta 3';
   var $ = function (id) { return document.getElementById(id); };
   var D = FlightData, T = FlightTime, S = FlightStatus;
 
@@ -145,10 +145,16 @@
       timeEl
     ]);
   }
+  function midBlock(v) {
+    var now = Date.now(), ex = v.ex, flying = ex.depMs != null && ex.arrMs != null && now >= ex.depMs && now < ex.arrMs;
+    var line = el('div', { class: 'mid-line' }, [svg(PLANE)]);
+    if (flying) line.style.setProperty('--p', Math.round((now - ex.depMs) / (ex.arrMs - ex.depMs) * 100) + '%');
+    return el('div', { class: 'mid' + (flying ? ' flying' : '') }, [line, el('div', { class: 'dur', text: T.duration(ex.durMin) })]);
+  }
   function routeBlock(t, v) {
     return el('div', { class: 'route' }, [
       airportEnd(t.from, t.fromCity, false, timeNode(v.dep.time, v.oldDep, v.ex.depZone, 0)),
-      el('div', { class: 'mid' }, [el('div', { class: 'mid-line' }, [svg(PLANE)]), el('div', { class: 'dur', text: T.duration(v.ex.durMin) })]),
+      midBlock(v),
       airportEnd(t.to, t.toCity, true, timeNode(v.arr.time, v.oldArr, v.ex.arrZone, v.ex.dayShift))
     ]);
   }
@@ -170,7 +176,8 @@
     var pax = t.passengers && t.passengers.length;
     var label = [t.from, t.to].filter(Boolean).join(' to ') || t.flightNumber || 'ticket';
     var x = el('button', { class: 'tile-x', 'aria-label': 'Remove ' + label, onclick: function (e) { e.stopPropagation(); removeTicket(t); } }, [svg(CROSS)]);
-    return el('div', { class: 'tile', role: 'button', tabindex: '0', 'aria-label': 'Open ' + label,
+    var soon = v.ex.depMs != null && v.ex.depMs - Date.now() < 24 * 36e5 && Date.now() < (v.ex.arrMs || v.ex.depMs);
+    return el('div', { class: 'tile' + (soon ? ' soon' : ''), role: 'button', tabindex: '0', 'aria-label': 'Open ' + label,
       onclick: function () { openDetail(t.id); },
       onkeydown: function (e) { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openDetail(t.id); } } }, [
       el('div', { class: 'tile-top' }, [el('span', { class: 'when', text: niceDate(v.dep.date) }), el('span', { class: 'tile-top-right' }, [badge(t, v), x])]),
@@ -184,7 +191,8 @@
     ]);
   }
   var EMPTY_TAB = { past: 'No past flights.', now: 'Nothing in the next 24 hours.', upcoming: 'No later flights.' };
-  function render() {
+  var lastShown = null, enterTimer = null;
+  function render(animate) {
     var groups = { past: [], now: [], upcoming: [] };
     tickets.forEach(function (t) { var v = view(t); groups[phase(t, v)].push({ t: t, v: v, k: sortValue(t, v) }); });
     groups.now.sort(function (a, b) { return a.k - b.k; });
@@ -200,8 +208,11 @@
       b.lastElementChild.textContent = groups[k].length ? groups[k].length : '';
     });
     var list = $('list'); list.textContent = '';
-    list.className = 'tiles' + (shown === 'past' ? ' past' : '');
-    if (has) groups[shown].forEach(function (g) { list.appendChild(tile(g.t, g.v)); });
+    var enter = animate === true || shown !== lastShown;
+    lastShown = shown;
+    if (enter) { clearTimeout(enterTimer); enterTimer = setTimeout(function () { list.classList.remove('enter'); }, 1400); }
+    list.className = 'tiles' + (shown === 'past' ? ' past' : '') + (enter || list.classList.contains('enter') ? ' enter' : '');
+    if (has) groups[shown].forEach(function (g, i) { var n = tile(g.t, g.v); n.style.setProperty('--i', Math.min(i, 8)); list.appendChild(n); });
     $('tab-empty').hidden = !has || groups[shown].length > 0;
     $('tab-empty').textContent = EMPTY_TAB[shown];
     var st = S.getSettings();
@@ -211,6 +222,7 @@
       : 'Stored only on this device. No account, no sync, no upload.';
   }
   function reload() { return TicketDB.allTickets().then(function (all) { tickets = all; render(); }); }
+  function plainRender() { render(false); }
 
   // ---------- live status ----------
   function refreshOne(t) {
@@ -695,7 +707,7 @@
   $('viewer-img').addEventListener('click', toggleZoom);
 
   // Keep countdowns fresh, and check status hourly while the app is open.
-  setInterval(function () { if (!document.hidden && $('view-form').hidden) { render(); } }, 60 * 1000);
+  setInterval(function () { if (!document.hidden && $('view-form').hidden) { plainRender(); } }, 60 * 1000);
   setInterval(autoCheck, 5 * 60 * 1000);
   document.addEventListener('visibilitychange', function () { if (!document.hidden) { render(); autoCheck(); } });
 
