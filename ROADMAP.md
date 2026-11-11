@@ -13,6 +13,8 @@ Built on this branch and checked in the browser (not yet on a phone, not yet liv
 
 - Phase 1 (first real case): an Air India web-booking PDF with four flights was read wrongly (flights 2–4). Fixed by keeping only the values printed closest to each flight number, rebuilding PDF rows correctly, and reading "SURNAME FIRSTNAME MR" names. An anonymised copy is now a permanent test.
 
+- Look and feel: glass theme, split-flap countdown for the next flight (flips on the exact second), plane travelling across each card, flights of one booking reference folded under one head with connection times, web check-in alert from 48 hours before departure with an optional calendar reminder.
+
 Still open: the journey-by-journey rebuild of the reader (needs real failing tickets), barcode reading, the OCR comparison, the small-model experiment, Phase 4.
 
 ## The promise

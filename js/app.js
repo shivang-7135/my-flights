@@ -1,7 +1,7 @@
 /* My Flights — screen logic. Tickets, names and pictures stay on this device. */
 (function () {
   'use strict';
-  var APP_VERSION = '2.0 beta 3';
+  var APP_VERSION = '2.0 beta 4';
   var $ = function (id) { return document.getElementById(id); };
   var D = FlightData, T = FlightTime, S = FlightStatus;
 
@@ -170,6 +170,122 @@
     ]);
   }
 
+  // ---------- web check-in ----------
+  // Most airlines open web check-in 48 hours before departure and close it about an hour before.
+  var CHECKIN_OPENS = 48 * 36e5, CHECKIN_CLOSES = 1 * 36e5;
+  function checkin(t, v) {             // 'none' | 'before' | 'open' | 'done' | 'closed'
+    if (v.ex.depMs == null) return { state: 'none' };
+    var now = Date.now(), opens = v.ex.depMs - CHECKIN_OPENS, closes = v.ex.depMs - CHECKIN_CLOSES;
+    if (t.checkedIn) return { state: 'done', opens: opens };
+    if (now < opens) return { state: 'before', opens: opens };
+    if (now < closes) return { state: 'open', opens: opens, closes: closes };
+    return { state: 'closed', opens: opens };
+  }
+  function checkinChip(t, v) {
+    var c = checkin(t, v);
+    if (c.state === 'open') return el('span', { class: 'chip checkin' }, [el('i', { class: 'dot' }), 'Web check-in open']);
+    if (c.state === 'done' && Date.now() < (v.ex.arrMs || v.ex.depMs)) return el('span', { class: 'chip done', text: '✓ Checked in' });
+    return null;
+  }
+  function setCheckedIn(t, yes) {
+    t.checkedIn = !!yes; t.updatedAt = Date.now();
+    return TicketDB.saveTickets([t], null).then(function () { render(); if (currentId === t.id) openDetail(t.id, true); });
+  }
+  // A calendar entry with an alarm is the one way to be reminded while the app is closed.
+  function calendarReminder(t, v) {
+    var c = checkin(t, v);
+    function stamp(ms) { return new Date(ms).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, ''); }
+    var title = 'Web check-in opens: ' + [t.flightNumber, [t.from, t.to].filter(Boolean).join(' to ')].filter(Boolean).join(' ');
+    var ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//My Flights//EN', 'BEGIN:VEVENT',
+      'UID:' + t.id + '-checkin@my-flights', 'DTSTAMP:' + stamp(Date.now()),
+      'DTSTART:' + stamp(c.opens), 'DTEND:' + stamp(c.opens + 15 * 6e4),
+      'SUMMARY:' + title, 'DESCRIPTION:The flight leaves 48 hours after this reminder.',
+      'BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:' + title, 'TRIGGER:PT0M', 'END:VALARM',
+      'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+    var file = new File([ics], 'check-in-' + (t.flightNumber || 'flight').replace(/\s+/g, '') + '.ics', { type: 'text/calendar' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { navigator.share({ files: [file] }).catch(function () {}); return; }
+    var u = URL.createObjectURL(file), a = el('a', { href: u, download: file.name });
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(u); }, 4000);
+    toast('Reminder saved. Open the file.');
+  }
+
+  // ---------- split-flap countdown for the next flight ----------
+  function flap(ch) {
+    var mk = function (cls) { return el('span', { class: 'half ' + cls }, [el('b', { text: ch })]); };
+    var n = el('span', { class: 'flap', 'aria-hidden': 'true' }, [mk('top'), mk('bot'), mk('ftop'), mk('fbot')]);
+    n._v = ch;
+    return n;
+  }
+  function setFlap(n, ch) {
+    if (n._v === ch) return;
+    var old = n._v, k = n.children;       // [top, bot, flip-top, flip-bottom]
+    n._v = ch;
+    k[0].firstChild.textContent = ch;     // new value waits behind the falling top half
+    k[2].firstChild.textContent = old;    // old top half falls away
+    k[3].firstChild.textContent = ch;     // new bottom half swings into place
+    n.classList.remove('go'); void n.offsetWidth; n.classList.add('go');
+    clearTimeout(n._t);
+    n._t = setTimeout(function () { k[1].firstChild.textContent = ch; n.classList.remove('go'); }, 560);
+  }
+  function flapGroup(label, digits) {
+    var cells = [];
+    for (var i = 0; i < digits; i++) cells.push(flap('0'));
+    var box = el('div', { class: 'flap-group' }, [el('div', { class: 'flaps' }, cells), el('small', { text: label })]);
+    box._cells = cells;
+    box.set = function (num) {
+      var str = String(num); while (str.length < digits) str = '0' + str;
+      str = str.slice(-digits);
+      for (var j = 0; j < digits; j++) setFlap(cells[j], str.charAt(j));
+    };
+    return box;
+  }
+  var hero = null;                       // { id, depMs, d, h, m, s, sr }
+  function countdownParts(ms) {
+    var sec = Math.max(0, Math.floor(ms / 1000));
+    return { d: Math.floor(sec / 86400), h: Math.floor(sec % 86400 / 3600), m: Math.floor(sec % 3600 / 60), s: sec % 60 };
+  }
+  function tickHero() {
+    if (!hero) return;
+    var left = hero.depMs - Date.now();
+    if (left <= 0) { hero = null; render(); return; }
+    var p = countdownParts(left);
+    hero.d.hidden = hero.sep.hidden = p.d === 0;
+    hero.board.classList.toggle('days', p.d > 0);
+    hero.d.set(p.d); hero.h.set(p.h); hero.m.set(p.m); hero.s.set(p.s);
+    hero.sr.textContent = (p.d ? p.d + ' days ' : '') + p.h + ' hours ' + p.m + ' minutes until departure';
+  }
+  function buildHero(next) {
+    var box = $('hero');
+    if (!next) { hero = null; box.hidden = true; box.textContent = ''; return; }
+    var t = next.t, v = next.v;
+    var sig = t.id + '|' + v.ex.depMs + '|' + (v.sum ? v.sum.text : '') + '|' + checkin(t, v).state;
+    if (hero && hero.sig === sig) { box.hidden = false; return; }
+    box.textContent = '';
+    var d = flapGroup('days', 2), h = flapGroup('hours', 2), m = flapGroup('min', 2), s2 = flapGroup('sec', 2);
+    var sep = el('span', { class: 'flap-sep', text: '' });
+    var sr = el('span', { class: 'sr-only', role: 'timer' });
+    box.appendChild(el('div', { class: 'hero-top' }, [
+      el('span', { class: 'hero-label', text: 'Next flight' }),
+      el('span', { class: 'hero-flight', text: [t.flightNumber, niceDate(v.dep.date) + (v.dep.time ? ' · ' + v.dep.time : '')].filter(Boolean).join(' · ') })
+    ]));
+    box.appendChild(el('div', { class: 'hero-route' }, [
+      el('span', { class: 'hero-code' }, [T.flag(t.from) ? el('span', { class: 'flag', text: T.flag(t.from) }) : null, t.from || '—']),
+      el('span', { class: 'hero-track' }, [svg(PLANE)]),
+      el('span', { class: 'hero-code' }, [t.to || '—', T.flag(t.to) ? el('span', { class: 'flag', text: T.flag(t.to) }) : null])
+    ]));
+    var board = el('div', { class: 'board' }, [d, sep, h, el('span', { class: 'colon', text: ':' }), m, el('span', { class: 'colon', text: ':' }), s2]);
+    box.appendChild(board);
+    box.appendChild(sr);
+    var extras = [v.sum && v.sum.text ? el('span', { class: 'pill ' + v.sum.tone, text: v.sum.text }) : null, checkinChip(t, v)].filter(Boolean);
+    if (extras.length) box.appendChild(el('div', { class: 'hero-extra' }, extras));
+    box.onclick = function () { openDetail(t.id); };
+    box.onkeydown = function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(t.id); } };
+    box.hidden = false;
+    hero = { sig: sig, id: t.id, depMs: v.ex.depMs, board: board, d: d, h: h, m: m, s: s2, sep: sep, sr: sr };
+    tickHero();
+  }
+
   // ---------- home ----------
   function tile(t, v) {
     var flight = [t.airline, t.flightNumber].filter(Boolean).join(' · ');
@@ -183,6 +299,7 @@
       el('div', { class: 'tile-top' }, [el('span', { class: 'when', text: niceDate(v.dep.date) }), el('span', { class: 'tile-top-right' }, [badge(t, v), x])]),
       routeBlock(t, v),
       statusRow(v),
+      checkinChip(t, v) ? el('div', { class: 'chip-row' }, [checkinChip(t, v)]) : null,
       el('div', { class: 'tile-meta' }, [
         el('span', { class: 'flight', text: flight || 'Flight' }),
         t.pnr ? el('span', { class: 'pnr' }, [el('small', { text: 'Ref' }), t.pnr]) : null
@@ -191,10 +308,62 @@
     ]);
   }
   var EMPTY_TAB = { past: 'No past flights.', now: 'Nothing in the next 24 hours.', upcoming: 'No later flights.' };
+  var openTrips = {};                    // which bookings are unfolded, per tab
+  function chain(items) {                // FRA -> DEL -> BLR
+    var out = [];
+    items.forEach(function (g) {
+      if (g.t.from && out[out.length - 1] !== g.t.from) out.push(g.t.from);
+      if (g.t.to) out.push(g.t.to);
+    });
+    return out;
+  }
+  function layover(a, b) {               // note between two flights of one booking
+    if (a.t.to && a.t.to === b.t.from && a.v.ex.arrMs != null && b.v.ex.depMs != null) {
+      var min = Math.round((b.v.ex.depMs - a.v.ex.arrMs) / 6e4);
+      if (min > 0 && min <= 24 * 60) return el('div', { class: 'layover' + (min < 60 ? ' tight' : '') },
+        [el('i'), 'Connection in ' + (D.AIRPORTS[a.t.to] || a.t.to) + ' · ' + T.duration(min) + (min < 60 ? ' — short' : '')]);
+      if (min > 24 * 60) return el('div', { class: 'layover stay' }, [el('i'), Math.round(min / 1440) + ' days in ' + (D.AIRPORTS[a.t.to] || a.t.to)]);
+    }
+    return null;
+  }
+  function tripBlock(items, tabName, idx) {
+    var first = items[0], last = items[items.length - 1], key = tabName + '|' + first.t.pnr;
+    if (openTrips[key] == null) openTrips[key] = tabName === 'now';
+    var codes = chain(items), route = el('div', { class: 'trip-route' });
+    codes.forEach(function (c, n) { if (n) route.appendChild(el('span', { class: 'arrow', text: '→' })); route.appendChild(el('span', { text: c })); });
+    var days = niceDate(first.v.dep.date) + (last.v.dep.date !== first.v.dep.date ? ' – ' + niceDate(last.v.dep.date) : '');
+    var worst = items.map(function (g) { return g.v.sum; }).filter(function (x) { return x && (x.tone === 'late' || x.tone === 'bad'); })[0];
+    var body = el('div', { class: 'trip-body' }), inner = el('div', { class: 'trip-inner' });
+    items.forEach(function (g, n) {
+      if (n) { var lay = layover(items[n - 1], g); if (lay) inner.appendChild(lay); }
+      inner.appendChild(tile(g.t, g.v));
+    });
+    body.appendChild(inner);
+    var block = el('section', { class: 'trip' + (openTrips[key] ? ' open' : '') });
+    var head = el('button', { class: 'trip-head', 'aria-expanded': openTrips[key] ? 'true' : 'false', onclick: function () {
+      openTrips[key] = !openTrips[key];
+      block.classList.toggle('open', openTrips[key]);
+      head.setAttribute('aria-expanded', openTrips[key] ? 'true' : 'false');
+    } }, [
+      el('div', { class: 'trip-main' }, [
+        route,
+        el('div', { class: 'trip-sub', text: items.length + ' flights · ' + days }),
+        el('div', { class: 'trip-sub' }, [el('span', { class: 'pnr' }, [el('small', { text: 'Ref' }), first.t.pnr]),
+          first.t.passengers.length ? el('span', { text: ' · ' + first.t.passengers.join(', ') }) : null])
+      ]),
+      el('div', { class: 'trip-side' }, [
+        worst ? el('span', { class: 'pill ' + worst.tone, text: worst.text }) : badge(first.t, first.v),
+        el('span', { class: 'chev' }, [svg('M6 9l6 6 6-6')])
+      ])
+    ]);
+    block.appendChild(head); block.appendChild(body);
+    block.style.setProperty('--i', Math.min(idx, 8));
+    return block;
+  }
   var lastShown = null, enterTimer = null;
   function render(animate) {
-    var groups = { past: [], now: [], upcoming: [] };
-    tickets.forEach(function (t) { var v = view(t); groups[phase(t, v)].push({ t: t, v: v, k: sortValue(t, v) }); });
+    var groups = { past: [], now: [], upcoming: [] }, all = [];
+    tickets.forEach(function (t) { var v = view(t), g = { t: t, v: v, k: sortValue(t, v) }; groups[phase(t, v)].push(g); all.push(g); });
     groups.now.sort(function (a, b) { return a.k - b.k; });
     groups.upcoming.sort(function (a, b) { return a.k - b.k; });
     groups.past.sort(function (a, b) { return b.k - a.k; });
@@ -207,12 +376,34 @@
       b.setAttribute('aria-selected', k === shown ? 'true' : 'false');
       b.lastElementChild.textContent = groups[k].length ? groups[k].length : '';
     });
+
+    // The next flight to leave gets the departure-board countdown.
+    var now = Date.now();
+    var next = all.filter(function (g) { return g.v.ex.depMs != null && g.v.ex.depMs > now && !(g.v.sum && g.v.sum.tone === 'bad' && /Cancel/.test(g.v.sum.text)); })
+      .sort(function (a, b) { return a.v.ex.depMs - b.v.ex.depMs; })[0];
+    buildHero(has && shown !== 'past' ? next : null);
+
+    // One entry per booking reference when it holds several flights; single flights stay as they are.
+    var byPnr = {}, entries = [];
+    groups[shown].forEach(function (g) {
+      var p = g.t.pnr;
+      if (p && byPnr[p]) { byPnr[p].items.push(g); return; }
+      var e = { items: [g], k: g.k };
+      if (p) byPnr[p] = e;
+      entries.push(e);
+    });
+    entries.forEach(function (e) { e.items.sort(function (a, b) { return a.k - b.k; }); });
+
     var list = $('list'); list.textContent = '';
     var enter = animate === true || shown !== lastShown;
     lastShown = shown;
     if (enter) { clearTimeout(enterTimer); enterTimer = setTimeout(function () { list.classList.remove('enter'); }, 1400); }
     list.className = 'tiles' + (shown === 'past' ? ' past' : '') + (enter || list.classList.contains('enter') ? ' enter' : '');
-    if (has) groups[shown].forEach(function (g, i) { var n = tile(g.t, g.v); n.style.setProperty('--i', Math.min(i, 8)); list.appendChild(n); });
+    if (has) entries.forEach(function (e, i) {
+      var n = e.items.length > 1 ? tripBlock(e.items, shown, i) : tile(e.items[0].t, e.items[0].v);
+      n.style.setProperty('--i', Math.min(i, 8));
+      list.appendChild(n);
+    });
     $('tab-empty').hidden = !has || groups[shown].length > 0;
     $('tab-empty').textContent = EMPTY_TAB[shown];
     var st = S.getSettings();
@@ -564,6 +755,23 @@
       refreshOne(t).then(function () { render(); openDetail(id, true); toast('Status updated'); },
         function (e) { refresh.disabled = false; refresh.textContent = live ? 'Refresh status' : 'Check live status'; toast(e.message); });
     } });
+    var ci = checkin(t, v);
+    if (ci.state === 'open' || ci.state === 'before' || (ci.state === 'done' && Date.now() < (v.ex.arrMs || v.ex.depMs))) {
+      var opensText = new Date(ci.opens).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+      var kids;
+      if (ci.state === 'open') kids = [
+        el('strong', null, [el('i', { class: 'dot' }), 'Web check-in is open']),
+        el('span', { text: 'Most airlines open it 48 hours before departure. Check in on the airline\u2019s website or app, then mark it here.' }),
+        el('button', { class: 'btn mini', text: 'I have checked in', onclick: function () { setCheckedIn(t, true); } })];
+      else if (ci.state === 'done') kids = [
+        el('strong', { text: '✓ Checked in' }),
+        el('button', { class: 'btn mini ghosty', text: 'Undo', onclick: function () { setCheckedIn(t, false); } })];
+      else kids = [
+        el('strong', { text: 'Web check-in opens ' + opensText }),
+        el('span', { text: 'Your phone\u2019s time. This app cannot alert you while it is closed, but a calendar reminder can.' }),
+        el('button', { class: 'btn mini', text: 'Add reminder to calendar', onclick: function () { calendarReminder(t, v); } })];
+      body.appendChild(el('div', { class: 'checkin-card ' + ci.state }, kids));
+    }
     if (t.flightNumber && phase(t, v) !== 'past') body.appendChild(refresh);
 
     if (t.imageId) {
@@ -709,7 +917,14 @@
   // Keep countdowns fresh, and check status hourly while the app is open.
   setInterval(function () { if (!document.hidden && $('view-form').hidden) { plainRender(); } }, 60 * 1000);
   setInterval(autoCheck, 5 * 60 * 1000);
-  document.addEventListener('visibilitychange', function () { if (!document.hidden) { render(); autoCheck(); } });
+  // The countdown flips exactly when a second runs out (not merely "about once a second"),
+  // so the board never lags behind the real time.
+  (function loop() {
+    var wait = 1000;
+    if (hero && !document.hidden) { tickHero(); if (hero) wait = (hero.depMs - Date.now()) % 1000 + 4; }
+    setTimeout(loop, Math.max(20, wait));
+  })();
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) { render(); tickHero(); autoCheck(); } });
 
   // Updates: a new version waits until "Update" is tapped. Tickets are stored separately and are not touched.
   if ('serviceWorker' in navigator) {
